@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart';
+import 'dart:typed_data';
 
 void main() {
   runApp(Decrypt());
@@ -29,8 +30,21 @@ class DecryptBody extends StatefulWidget {
   State<DecryptBody> createState() => _DecryptBodyState();
 }
 
+String darrDecrypt(String encryptedText, String key) {
+  String decryptedText = '';
+  int keyLength = key.length;
+  for (int i = 0; i < encryptedText.length; i++) {
+    int keyIndex = i % keyLength;
+    int keyChar = key.codeUnitAt(keyIndex);
+    int decryptedChar = (encryptedText.codeUnitAt(i) - keyChar) % 256;
+    decryptedText += String.fromCharCode(decryptedChar);
+  }
+  print(decryptedText);
+  return decryptedText;
+}
+
 class _DecryptBodyState extends State<DecryptBody> {
-  String msg = 'Imei';
+  String imei = 'Imei';
 
   // String decodeMessage(var frameImage) {
   // String decodedMessage = '';
@@ -44,43 +58,155 @@ class _DecryptBodyState extends State<DecryptBody> {
   // }
 
 //   return decodedMessage;
-// }
-  void decodeMessage({required File media}) async {
-    String tempFilePath = Directory.systemTemp.path;
-    String videoPath = media.path; // Replace with the actual path to your video
-    String outputPath =
-        tempFilePath; // Replace with the desired path to save the frames
-    int frameRate = 30; // Number of frames per second (adjust as needed)
+//
 
-    final FlutterFFmpeg _flutterFFmpeg = FlutterFFmpeg();
+  List<int> extractSteganography(List<int> frameBytes) {
+    List<int> extractedBytes = [];
 
-    String command = '-i $videoPath -vf "fps=$frameRate" $outputPath%04d.jpg';
+    int messageLength = _extractLength(frameBytes);
+    if (messageLength == 0) {
+      return extractedBytes;
+    }
 
-    int returnCode = await _flutterFFmpeg.execute(command);
-    if (returnCode == 0) {
-      print('Video frames extracted successfully');
+    int byteIndex = 4; // Skip the length header
+    int bitIndex = 0;
+    int currentByte = 0;
+
+    while (extractedBytes.length < messageLength) {
+      if (byteIndex >= frameBytes.length) {
+        break;
+      }
+
+      int bit = _getBit(frameBytes[byteIndex], bitIndex);
+      currentByte = _setBit(currentByte, 7, bit);
+
+      bitIndex++;
+      if (bitIndex >= 8) {
+        extractedBytes.add(currentByte);
+        currentByte = 0;
+        bitIndex = 0;
+      }
+
+      byteIndex++;
+    }
+
+    return extractedBytes;
+  }
+
+  int _extractLength(List<int> frameBytes) {
+    int length = 0;
+
+    for (int i = 0; i < 4; i++) {
+      int bit = _getBit(frameBytes[i], 0);
+      length = _setBit(length, (i * 8) + 7, bit);
+    }
+
+    return length;
+  }
+
+  int _getBit(int byte, int index) {
+    return (byte >> (7 - index)) & 1;
+  }
+
+  int _setBit(int byte, int index, int bit) {
+    if (bit == 1) {
+      return byte | (1 << (7 - index));
     } else {
-      print('Failed to extract video frames');
+      return byte & ~(1 << (7 - index));
     }
-    String framesPath =
-        outputPath; // Replace with the path to the directory containing the extracted frames
+  }
 
-    Directory framesDirectory = Directory(framesPath);
-    List<File> frameFiles =
-        framesDirectory.listSync().whereType<File>().toList();
+  String binaryToString(List<int> binaryMessage) {
+    String result = "";
 
-    for (var i = 0; i < frameFiles.length; i++) {
-      File frameFile = frameFiles[i];
-      var frameImage = decodeImage(frameFile.readAsBytesSync());
-
-      // Process the frame image as needed
-      // ...
-
-      // Example: Display frame dimensions
-      print(
-          'Frame $i dimensions: ${frameImage!.width} x ${frameImage!.height}');
-      // Save the modified video to a file
+    String binaryByte = "";
+    for (int i = 0; i < binaryMessage.length; i += 8) {
+      int endIndex = i + 8;
+      if (endIndex > binaryMessage.length) {
+        endIndex = binaryMessage.length;
+      }
+      for (int j = 0; j < endIndex - i; j++) {
+        binaryByte += binaryMessage[i + j].toString();
+      }
     }
+
+    // Remove spaces from the binaryByte string
+    binaryByte = binaryByte.replaceAll(' ', '');
+
+    for (int i = 0; i < binaryByte.length; i += 8) {
+      int endIndex = i + 8;
+      if (endIndex > binaryByte.length) {
+        endIndex = binaryByte.length;
+      }
+      String byteSubstring = binaryByte.substring(i, endIndex);
+      int charCode = int.parse(byteSubstring, radix: 2);
+      String char = String.fromCharCode(charCode);
+      result += char;
+    }
+    
+    print(binaryToStringmsg(binaryMessage));
+    //darrDecrypt(result, '43');
+    return binaryToStringmsg(binaryMessage);
+  }
+
+  String binaryToStringmsg(List<int> binaryMessage) {
+  String result = "";
+
+  for (int i = 0; i < binaryMessage.length; i += 8) {
+    int endIndex = i + 8;
+    if (endIndex > binaryMessage.length) {
+      endIndex = binaryMessage.length;
+    }
+    List<int> byteBinary = binaryMessage.sublist(i, endIndex);
+    int charCode = int.parse(byteBinary.join(), radix: 2);
+    result += String.fromCharCode(charCode);
+  }
+
+  return result;
+}
+
+  String decodeMessage(Uint8List videoBytes, int messageLength) {
+    List<int> binaryMessage = [];
+
+    for (int i = 0; i < videoBytes.length; i++) {
+      int videoByte = videoBytes[i];
+      int messageBit = videoByte & 0x01;
+      binaryMessage.add(messageBit);
+    }
+
+    return binaryToString(binaryMessage).substring(0, messageLength);
+  }
+
+  Future<String> decodeMessageFromVideo(File media) async {
+    var messageLength = 15;
+    final videoBytes = media.readAsBytesSync();
+    final flutterFFmpeg = FlutterFFmpeg();
+    final Directory? extDir = await getExternalStorageDirectory();
+    final testDir = await Directory(
+            '${extDir?.path}/img/${DateTime.now().millisecondsSinceEpoch}')
+        .create(recursive: true);
+
+    await flutterFFmpeg
+        .execute('-i ${media.path} ${testDir.path}/frame-%04d.jpg');
+
+    final frameFiles = Directory(testDir.path)
+        .listSync()
+        .where((entity) => entity is File && entity.path.endsWith('.jpg'))
+        .map((entity) => entity.path)
+        .toList();
+
+    List<File> files = [];
+    for (final frameFile in frameFiles) {
+      final frameBytes = File(frameFile).readAsBytesSync();
+      files.add(File(frameFile));
+      final decodedMessage = decodeMessage(frameBytes, messageLength);
+      if (decodedMessage.isNotEmpty) {
+        print(decodedMessage.toString());
+        return decodedMessage;
+      }
+    }
+
+    throw Exception('No hidden message found in the video.');
   }
 
   Future<File> getImage() async {
@@ -98,6 +224,7 @@ class _DecryptBodyState extends State<DecryptBody> {
   void filePick() async {
     File file = await getImage();
     //final file = File(vdo.path);
+    decodeMessageFromVideo(file);
     List<int> encodedBytes = await file.readAsBytes();
     int key = 42; // Same key used for encryption
 
@@ -131,7 +258,7 @@ class _DecryptBodyState extends State<DecryptBody> {
                   filePick();
                 },
                 child: Text("Upload file")),
-            Text('Imei :')
+            Text('Imei :${imei}')
           ],
         ),
       )),
