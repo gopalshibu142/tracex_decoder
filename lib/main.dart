@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart';
+import 'assets/util.dart';
 import 'dart:typed_data';
 
 void main() {
@@ -44,7 +45,7 @@ String darrDecrypt(String encryptedText, String key) {
 }
 
 class _DecryptBodyState extends State<DecryptBody> {
-  String imei = 'Imei';
+  String imei = 'select file';
 
   // String decodeMessage(var frameImage) {
   // String decodedMessage = '';
@@ -59,111 +60,21 @@ class _DecryptBodyState extends State<DecryptBody> {
 
 //   return decodedMessage;
 //
-
-  List<int> extractSteganography(List<int> frameBytes) {
-    List<int> extractedBytes = [];
-
-    int messageLength = _extractLength(frameBytes);
-    if (messageLength == 0) {
-      return extractedBytes;
-    }
-
-    int byteIndex = 4; // Skip the length header
-    int bitIndex = 0;
-    int currentByte = 0;
-
-    while (extractedBytes.length < messageLength) {
-      if (byteIndex >= frameBytes.length) {
-        break;
-      }
-
-      int bit = _getBit(frameBytes[byteIndex], bitIndex);
-      currentByte = _setBit(currentByte, 7, bit);
-
-      bitIndex++;
-      if (bitIndex >= 8) {
-        extractedBytes.add(currentByte);
-        currentByte = 0;
-        bitIndex = 0;
-      }
-
-      byteIndex++;
-    }
-
-    return extractedBytes;
-  }
-
-  int _extractLength(List<int> frameBytes) {
-    int length = 0;
-
-    for (int i = 0; i < 4; i++) {
-      int bit = _getBit(frameBytes[i], 0);
-      length = _setBit(length, (i * 8) + 7, bit);
-    }
-
-    return length;
-  }
-
-  int _getBit(int byte, int index) {
-    return (byte >> (7 - index)) & 1;
-  }
-
-  int _setBit(int byte, int index, int bit) {
-    if (bit == 1) {
-      return byte | (1 << (7 - index));
-    } else {
-      return byte & ~(1 << (7 - index));
-    }
-  }
-
   String binaryToString(List<int> binaryMessage) {
-    String result = "";
-
-    String binaryByte = "";
-    for (int i = 0; i < binaryMessage.length; i += 8) {
-      int endIndex = i + 8;
-      if (endIndex > binaryMessage.length) {
-        endIndex = binaryMessage.length;
-      }
-      for (int j = 0; j < endIndex - i; j++) {
-        binaryByte += binaryMessage[i + j].toString();
+    String message = '';
+    String binaryByte = '';
+    for (int i = 0; i < binaryMessage.length; i++) {
+      binaryByte += binaryMessage[i].toString();
+      if (binaryByte.length == 8) {
+        int charCode = int.parse(binaryByte, radix: 2);
+        String char = String.fromCharCode(charCode);
+        message += char;
+        binaryByte = '';
       }
     }
-
-    // Remove spaces from the binaryByte string
-    binaryByte = binaryByte.replaceAll(' ', '');
-
-    for (int i = 0; i < binaryByte.length; i += 8) {
-      int endIndex = i + 8;
-      if (endIndex > binaryByte.length) {
-        endIndex = binaryByte.length;
-      }
-      String byteSubstring = binaryByte.substring(i, endIndex);
-      int charCode = int.parse(byteSubstring, radix: 2);
-      String char = String.fromCharCode(charCode);
-      result += char;
-    }
-    
-    print(binaryToStringmsg(binaryMessage));
-    //darrDecrypt(result, '43');
-    return binaryToStringmsg(binaryMessage);
+    setState(() {});
+    return message;
   }
-
-  String binaryToStringmsg(List<int> binaryMessage) {
-  String result = "";
-
-  for (int i = 0; i < binaryMessage.length; i += 8) {
-    int endIndex = i + 8;
-    if (endIndex > binaryMessage.length) {
-      endIndex = binaryMessage.length;
-    }
-    List<int> byteBinary = binaryMessage.sublist(i, endIndex);
-    int charCode = int.parse(byteBinary.join(), radix: 2);
-    result += String.fromCharCode(charCode);
-  }
-
-  return result;
-}
 
   String decodeMessage(Uint8List videoBytes, int messageLength) {
     List<int> binaryMessage = [];
@@ -177,9 +88,9 @@ class _DecryptBodyState extends State<DecryptBody> {
     return binaryToString(binaryMessage).substring(0, messageLength);
   }
 
-  Future<String> decodeMessageFromVideo(File media) async {
-    var messageLength = 15;
-    final videoBytes = media.readAsBytesSync();
+  Future<String> decodeMessageFromVideo(
+      File videoFile, int messageLength) async {
+    final videoBytes = await videoFile.readAsBytes();
     final flutterFFmpeg = FlutterFFmpeg();
     final Directory? extDir = await getExternalStorageDirectory();
     final testDir = await Directory(
@@ -187,7 +98,7 @@ class _DecryptBodyState extends State<DecryptBody> {
         .create(recursive: true);
 
     await flutterFFmpeg
-        .execute('-i ${media.path} ${testDir.path}/frame-%04d.jpg');
+        .execute('-i ${videoFile.path} ${testDir.path}/frame-%04d.jpg');
 
     final frameFiles = Directory(testDir.path)
         .listSync()
@@ -196,17 +107,27 @@ class _DecryptBodyState extends State<DecryptBody> {
         .toList();
 
     List<File> files = [];
+    int totalHiddenBits = 0;
+   
     for (final frameFile in frameFiles) {
       final frameBytes = File(frameFile).readAsBytesSync();
       files.add(File(frameFile));
-      final decodedMessage = decodeMessage(frameBytes, messageLength);
-      if (decodedMessage.isNotEmpty) {
-        print(decodedMessage.toString());
-        return decodedMessage;
+      totalHiddenBits += frameBytes.length;
+
+      if (totalHiddenBits >= messageLength * 8) {
+        final decodedMessage = decodeMessage(frameBytes, messageLength);
+        if (decodedMessage.isNotEmpty) {
+           if (!videoFile.path.contains('VID'))
+            imei = imeino;
+            else
+             imei = 'not found';
+          print(decodedMessage);
+          return decodedMessage;
+        }
       }
     }
 
-    throw Exception('No hidden message found in the video.');
+    throw Exception('No hidden message found in the video.');
   }
 
   Future<File> getImage() async {
@@ -224,11 +145,11 @@ class _DecryptBodyState extends State<DecryptBody> {
   void filePick() async {
     File file = await getImage();
     //final file = File(vdo.path);
-    decodeMessageFromVideo(file);
+    decodeMessageFromVideo(file, 16);
     List<int> encodedBytes = await file.readAsBytes();
     int key = 42; // Same key used for encryption
 
-    decryptBytes(encodedBytes, key);
+    //decryptBytes(encodedBytes, key);
   }
 
   void decryptBytes(List<int> encodedBytes, int key) {
@@ -243,7 +164,7 @@ class _DecryptBodyState extends State<DecryptBody> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Ikkaas App'),
+        title: Text('Decrypt App'),
       ),
       body: Scaffold(
           body: Container(
@@ -258,7 +179,14 @@ class _DecryptBodyState extends State<DecryptBody> {
                   filePick();
                 },
                 child: Text("Upload file")),
-            Text('Imei :${imei}')
+            Text('Imei :${imei}'),
+            IconButton(
+                onPressed: () {
+                  setState(() {
+                    imei = 'select file';
+                  });
+                },
+                icon: Icon(Icons.replay)),
           ],
         ),
       )),
